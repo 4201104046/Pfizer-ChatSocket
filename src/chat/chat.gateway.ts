@@ -12,9 +12,10 @@ import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import { PushMessageDto } from './dto/push-message.dto';
+import { Console } from 'console';
 
 @WebSocketGateway({
-  namespace: '/erp-aziworld',
+  namespace: '/chat-module',
   cors: { origin: '*' },
 })
 export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
@@ -84,10 +85,14 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     this.server.in(`user.${d.user_id}`).emit(d.event_name, d.body);
   }
 
-  @SubscribeMessage('user_join_room')
-  onUserJoinRoom(@MessageBody() d: any) {
-    this.server.in(`user.${d.user_id}`).socketsJoin(`${d.room_id}`);
-  }
+ @SubscribeMessage('user_join_room')
+onUserJoinRoom(@MessageBody() d: any, @ConnectedSocket() client: Socket) {
+  console.log(JSON.stringify(d));
+  console.log(`Client ${client.id} joined room ${d.room_id}`);
+
+  client.join(`${d.room_id}`); // ✅ cho client này join room
+}
+
 
   @SubscribeMessage('user_leave_room')
   onUserLeaveRoom(@MessageBody() d: any) {

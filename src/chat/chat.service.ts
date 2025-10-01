@@ -3,13 +3,15 @@ import axios from 'axios';
 import { Socket, Server } from 'socket.io';
 import { SendMessageDto } from './dto/send-message.dto';
 import { PushMessageDto } from './dto/push-message.dto';
-import { Adapter } from "socket.io-adapter";
+import { Adapter } from 'socket.io-adapter';
 
 @Injectable()
 export class ChatService {
     private server: Server | null = null;
-    private readonly API_BASE = process.env.ERP_API_BASE || 'https://api.azicloud.vn/api/v1/erp';
-    private readonly CSHARP_SEND_ENDPOINT = process.env.C_SHARP_SEND_ENDPOINT || 'http://localhost:5000/api/zalo/send';
+    private readonly API_BASE =
+        process.env.ERP_API_BASE || 'https://api.azicloud.vn/api/v1/erp';
+    private readonly CSHARP_SEND_ENDPOINT =
+        process.env.C_SHARP_SEND_ENDPOINT || 'http://localhost:5000/api/zalo/send';
 
     setServer(server: Server) {
         this.server = server;
@@ -18,18 +20,22 @@ export class ChatService {
     // Auth via ERP C# endpoint and join rooms
     async handleAuthAndJoin(socket: Socket) {
         try {
-            const token = (socket.handshake.headers['authorization'] as string) || socket.handshake.auth?.token;
+            const token =
+                (socket.handshake.headers['authorization'] as string) ||
+                socket.handshake.auth?.token;
             if (!token) {
                 return socket.disconnect();
             }
 
-            const res = await axios.get(`${this.API_BASE}/socket/connection`, { headers: { Authorization: token } });
+            const res = await axios.get(`${this.API_BASE}/socket/connection`, {
+                headers: { Authorization: token },
+            });
             if (res.status !== 200 || !res.data?.result) {
                 return socket.disconnect();
             }
 
             const data = res.data.result;
-            if (data.user_id == null) {
+            if (!data.user_id) {
                 return socket.disconnect();
             }
 
@@ -57,8 +63,9 @@ export class ChatService {
 
         const adapter = this.server.adapter as unknown as Adapter;
         const rooms = adapter.rooms;
-        const userRoomSockets = rooms.get(`user.${socket.data.user_id}`);
-        if (!userRoomSockets) {
+        const userRoom = `user.${socket.data.user_id}`;
+
+        if (!rooms.has(userRoom)) {
             socket.broadcast.emit('disconnected_users', [socket.data.user_id]);
         }
     }
@@ -67,19 +74,26 @@ export class ChatService {
     async handleRoomMessage(socket: Socket, data: any) {
         if (!this.server) return;
         try {
-            const token = (socket.handshake.headers['authorization'] as string) || socket.handshake.auth?.token;
+            const token =
+                (socket.handshake.headers['authorization'] as string) ||
+                socket.handshake.auth?.token;
             if (!token) return socket.disconnect();
 
-            const res = await axios.post(`${this.API_BASE}/web/chat/room/message/send`, data, { headers: { Authorization: token } });
+            const res = await axios.post(
+                `${this.API_BASE}/web/chat/room/message/send`,
+                data,
+                { headers: { Authorization: token } },
+            );
+
             if (res.status === 200) {
                 if (res.data?.success && res.data.result?.id) {
                     data.message.id = res.data.result.id;
                 }
-                this.server.in(`${data.room_id}`).emit('room_message', data);
+                this.server.to(`${data.room_id}`).emit('room_message', data);
             } else {
                 socket.disconnect();
             }
-        } catch (e) {
+        } catch {
             socket.disconnect();
         }
     }
@@ -88,17 +102,25 @@ export class ChatService {
     async handleFbMessage(socket: Socket, data: any) {
         if (!this.server) return;
         try {
-            const token = (socket.handshake.headers['authorization'] as string) || socket.handshake.auth?.token;
+            const token =
+                (socket.handshake.headers['authorization'] as string) ||
+                socket.handshake.auth?.token;
             if (!token) return socket.disconnect();
 
-            const res = await axios.post(`${this.API_BASE}/web/chat/room/facebook/message/send`, data, { headers: { Authorization: token } });
+            const res = await axios.post(
+                `${this.API_BASE}/web/chat/room/facebook/message/send`,
+                data,
+                { headers: { Authorization: token } },
+            );
             if (res.status === 200) {
-                if (res.data?.success && res.data.result?.id) data.message.id = res.data.result.id;
-                this.server.in(`${data.room_id}`).emit('room_message', data);
+                if (res.data?.success && res.data.result?.id) {
+                    data.message.id = res.data.result.id;
+                }
+                this.server.to(`${data.room_id}`).emit('room_message', data);
             } else {
                 socket.disconnect();
             }
-        } catch (e) {
+        } catch {
             socket.disconnect();
         }
     }
@@ -107,26 +129,40 @@ export class ChatService {
     async handleOaMessage(socket: Socket, dto: SendMessageDto) {
         if (!this.server) return;
         try {
-            const token = (socket.handshake.headers['authorization'] as string) || socket.handshake.auth?.token;
-            if (!token) return socket.disconnect();
-
-            // Forward to C# endpoint for sending via OA
-            await axios.post(this.CSHARP_SEND_ENDPOINT, {
+            const token =
+                (socket.handshake.headers['authorization'] as string) ||
+                socket.handshake.auth?.token;
+            const payload = {
+                tenant_id: 1,
+                customapp_id: 17,
+                lang_id: 1,
                 roomId: dto.roomId,
-                senderId: dto.message.senderId,
-                text: dto.message.text,
-                // add other fields needed by C#...
-            }, { headers: { Authorization: token } });
+                SenderId: dto.message.senderId,
+                type: dto.message.type,
+                content: dto.message.content
+            };
+
+            const res = await axios.post(
+                'https://api.azidev.com/api/v1/custom-app/zalo-crm/chat/send',
+                payload,
+                { headers: { 'Content-Type': 'application/json' } },
+            );
+
+            console.log('OA send response:', res.data);
 
             // optimistic emit to room so admins see it immediately
-            this.server.in(`${dto.roomId}`).emit('room_message', dto);
+            this.server.to(dto.roomId).emit('room_message', {
+                ...dto.message,
+                status: 'sent',
+            });
         } catch (e) {
+            console.error('handleOaMessage error:', e.message);
             socket.disconnect();
         }
     }
+
     // Client hoặc Admin gửi message thường (không phải OA riêng)
     async handleSendMessage(socket: Socket, dto: SendMessageDto) {
-        console.log("emit send_message")
         if (!this.server) return;
 
         try {
@@ -138,52 +174,47 @@ export class ChatService {
                 return;
             }
 
-            // Forward tới backend C# để lưu DB + xử lý logic khác
             const res = await axios.post(
-                `${process.env.CSHARP_SEND_ENDPOINT || 'http://localhost:5000/api/chat/send'}`,
+                this.CSHARP_SEND_ENDPOINT.replace('/zalo/send', '/chat/send'),
                 {
                     roomId: dto.roomId,
                     senderId: dto.message.senderId,
-                    text: dto.message.text,
+                    text: dto.message.content,
                     attachments: dto.message.attachments,
                 },
                 { headers: { Authorization: token } },
             );
 
-            // Emit lại cho tất cả client trong room
-            this.server.in(`${dto.roomId}`).emit('room_message', {
+            this.server.to(dto.roomId).emit('room_message', {
                 ...dto.message,
                 id: res.data?.id || undefined,
                 status: 'sent',
                 createdAt: new Date(),
             });
-
         } catch (e) {
-            console.log(e)
             console.error('handleSendMessage error:', e.message);
             socket.disconnect();
         }
     }
 
-    // Called by C# backend when webhook processed (OA inbound). C# calls NestJS controller which calls this.
+    // Called by C# backend when webhook processed (OA inbound).
     async pushOaInbound(roomId: string, payload: any) {
         if (!this.server) return;
-        this.server.in(`${roomId}`).emit('room_message', payload);
+        console.log('pushOaInbound', roomId, JSON.stringify(payload));
+        this.server.to(roomId).emit('room_message', payload);
     }
 
-    getUserRooms(): number[] {
+    getUserRooms(): string[] {
         if (!this.server) return [];
-        // const rooms = this.server.of('/erp-aziworld').adapter.rooms;
-
         const adapter = this.server.adapter as unknown as Adapter;
         const rooms = adapter.rooms;
-        // const rooms = this.server.adapter.rooms;
-        const userRooms: number[] = [];
+        const userRooms: string[] = [];
+
         if (!rooms || rooms.size === 0) return [];
+
         for (const r of rooms.keys()) {
-            if (r.includes('user.')) {
-                const num = parseInt(r.replace('user.', ''), 10);
-                if (!Number.isNaN(num)) userRooms.push(num);
+            if (r.startsWith('user.')) {
+                userRooms.push(r);
             }
         }
         return userRooms;

@@ -1,12 +1,13 @@
 // Object chat chung (cả inbound/outbound dùng chung)
 
 export class MessageDto {
-  id?: number;                // id trong DB (nếu có)
-  roomId: string;             // phòng chat (OA / User / Group)
-  senderId: string;           // id của người gửi (userId, oaId, adminId)
+   id?: number;
+  roomId: string;
+  senderId: string;
   senderType: 'user' | 'oa' | 'admin';
-  text: string;
-  attachments?: any[];        // file, ảnh, video...
+  type: 'text' | 'image' | 'file';
+  content: string;            // text hoặc URL ảnh/file
+  attachments?: any[];        // optional nếu type = file
   status?: 'sent' | 'delivered' | 'read';
   createdAt?: Date;
 }
