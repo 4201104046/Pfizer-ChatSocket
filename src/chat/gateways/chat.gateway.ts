@@ -9,9 +9,9 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { ChatService } from './chat.service';
-import { SendMessageDto } from './dto/send-message.dto';
-import { PushMessageDto } from './dto/push-message.dto';
+import { ChatService } from '../services/chat.service';
+import { SendMessageDto } from '../dto/send-message.dto';
+import { PushMessageDto } from '../dto/push-message.dto';
 import { Console } from 'console';
 
 @WebSocketGateway({
@@ -52,11 +52,15 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     return this.chatService.handleRoomMessage(socket, data);
   }
 
-  // Facebook message channel
-  @SubscribeMessage('room_facebook_message')
-  async onFbMessage(@MessageBody() data: any, @ConnectedSocket() socket: Socket) {
-    return this.chatService.handleFbMessage(socket, data);
+  @SubscribeMessage('subscribeInbox')
+  async handleSubscribeInbox(
+    @MessageBody() cfcId: string,
+    @ConnectedSocket() socket: Socket,
+  ) {
+    console.log(`subscribeInbox: ${JSON.stringify(cfcId)}`)
+    await this.chatService.handleSubscribeInbox(socket, cfcId);
   }
+
 
   // OA-specific send from admin -> forward to backend C# to actually call Zalo OA API
   @SubscribeMessage('room_oa_message')
@@ -85,12 +89,16 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     this.server.in(`user.${d.user_id}`).emit(d.event_name, d.body);
   }
 
- @SubscribeMessage('user_join_room')
-onUserJoinRoom(@MessageBody() d: any, @ConnectedSocket() client: Socket) {
-  console.log(JSON.stringify(d));
-  console.log(`Client ${client.id} joined room ${d.room_id}`);
+@SubscribeMessage('user_join_room')
+async handleJoinRoom(
+  @MessageBody() data: { roomId: string },
+  @ConnectedSocket() socket: Socket
+) {
+  const { roomId } = data;
 
-  client.join(`${d.room_id}`); // ✅ cho client này join room
+  const preview = await this.chatService.handleJoinRoom(socket, roomId);
+
+  socket.emit('joined', { roomId, preview });
 }
 
 
@@ -125,3 +133,6 @@ onUserJoinRoom(@MessageBody() d: any, @ConnectedSocket() client: Socket) {
     }
   }
 }
+
+
+

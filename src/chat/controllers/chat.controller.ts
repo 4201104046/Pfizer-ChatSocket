@@ -1,6 +1,6 @@
 import { Controller, Post, Body } from '@nestjs/common';
-import { ChatService } from './chat.service';
-import { PushMessageDto } from './dto/push-message.dto';
+import { ChatService } from '../services/chat.service';
+import { PushMessageDto } from '../dto/push-message.dto';
 
 @Controller('chat')
 export class ChatController {
